@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../config/database';
-import { JobType, JobStatus, MediaAssetStatus } from '@prisma/client';
+import { JobType, JobStatus, MediaAssetStatus, MediaVariantType } from '@prisma/client';
 import { creditLedger } from '../services/credit-ledger.service';
 import { ffmpegService } from '../media/ffmpeg.service';
 import { proxyQueue, transcodeQueue, aiQueue, exportQueue, getQueueMetrics } from '../queues/job.queue';
@@ -694,6 +696,67 @@ export class FrameForgeController {
       });
 
       return res.json({ success: true, message: `Project deleted successfully` });
+    } catch (e) {
+      next(e);
+    }
+  }
+
+  async downloadJobResult(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id: jobId } = req.params;
+      const job = await prisma.processingJob.findFirst({
+        where: { id: jobId, userId: req.user!.id },
+        include: { mediaAsset: true },
+      });
+
+      if (!job) {
+        throw new AppError('Job not found', 404, 'NOT_FOUND');
+      }
+
+      if (job.status !== JobStatus.COMPLETED) {
+        throw new AppError('Job is not completed yet', 400, 'JOB_NOT_READY');
+      }
+
+      // 1. If PROXY, locate the media variant file
+      if (job.type === JobType.PROXY_GENERATION && job.mediaAssetId) {
+        const variant = await prisma.mediaVariant.findFirst({
+          where: { mediaAssetId: job.mediaAssetId, type: MediaVariantType.PROXIED_360P },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (variant && fs.existsSync(variant.storageKey)) {
+          return res.download(variant.storageKey, `proxy-${job.mediaAsset?.originalFilename || 'video'}.mp4`);
+        }
+      }
+
+      // 2. If EXPORT, find exported file in outputs directory
+      const outputDir = config.storage.outputDir;
+      const possibleExportFiles = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : [];
+      const match = possibleExportFiles.find((f: string) => f.includes(jobId) && f.endsWith('.mp4'));
+
+      if (match) {
+        const filePath = path.join(outputDir, match);
+        return res.download(filePath, `export-${job.mediaAsset?.originalFilename || 'frameforge'}.mp4`);
+      }
+
+      // Fallback: If AI Analysis, download the JSON analysis report
+      if (job.type === JobType.AI_ANALYSIS) {
+        const events = await prisma.jobEvent.findMany({
+          where: { jobId, eventType: 'JOB_COMPLETED' },
+          orderBy: { createdAt: 'desc' },
+        });
+        const meta = events[0]?.metadata || { message: 'AI Analysis complete' };
+        res.setHeader('Content-Disposition', `attachment; filename="ai-analysis-${jobId.slice(0, 8)}.json"`);
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify(meta, null, 2));
+      }
+
+      // Fallback to media file if output variant not found
+      if (job.mediaAsset && fs.existsSync(job.mediaAsset.storageKey)) {
+        return res.download(job.mediaAsset.storageKey, job.mediaAsset.originalFilename);
+      }
+
+      throw new AppError('Output file not found on server storage', 404, 'FILE_NOT_FOUND');
     } catch (e) {
       next(e);
     }

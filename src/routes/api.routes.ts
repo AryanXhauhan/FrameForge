@@ -31,6 +31,7 @@ router.post('/projects/:projectId/export', (req, res, next) => controller.reques
 
 // Jobs Management
 router.get('/jobs/:id', (req, res, next) => controller.getJobById(req, res, next));
+router.get('/jobs/:id/download', (req, res, next) => controller.downloadJobResult(req, res, next));
 router.post('/jobs/:id/cancel', (req, res, next) => controller.cancelJob(req, res, next));
 router.post('/jobs/:id/retry', (req, res, next) => controller.retryJob(req, res, next));
 router.delete('/jobs/:id', (req, res, next) => controller.deleteJob(req, res, next));

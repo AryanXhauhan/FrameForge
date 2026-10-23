@@ -1153,7 +1153,12 @@
             ${status === 'PROCESSING' || status === 'QUEUED' ? `Running for: <span id="elapsed-val-${jobId}">${formatTime(timerData.elapsed)}</span>` : ''}
             ${status === 'COMPLETED' ? `✅ Processed in ${formatTime(timerData.elapsed || 3)}` : ''}
           </span>
-          <div style="display: flex; gap: 0.5rem;">
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            ${status === 'COMPLETED' ? `
+              <a href="/api/jobs/${jobId}/download" download class="btn-clay btn-clay-primary" style="padding: 0.35rem 0.85rem; font-size: 0.76rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem; background: linear-gradient(135deg, #10b981, #059669); color: white; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                📥 Download
+              </a>
+            ` : ''}
             ${status === 'PROCESSING' || status === 'QUEUED' ? `<button class="btn-clay btn-clay-danger" style="padding: 0.3rem 0.7rem; font-size: 0.72rem;" onclick="cancelJob('${jobId}')">Cancel</button>` : ''}
             ${status === 'FAILED' ? `<button class="btn-clay btn-clay-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.72rem;" onclick="retryJob('${jobId}')">Retry</button>` : ''}
             <button class="btn-clay btn-clay-danger" style="padding: 0.3rem 0.7rem; font-size: 0.72rem; opacity: 0.85;" onclick="deleteJob('${jobId}')" title="Delete job record">🗑️ Delete</button>
