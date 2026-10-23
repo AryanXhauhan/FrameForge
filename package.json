@@ -4,7 +4,7 @@
   "description": "Production-Grade Media Processing & Export Backend",
   "main": "dist/index.js",
   "scripts": {
-    "build": "node ./node_modules/typescript/bin/tsc",
+    "build": "npx prisma generate && node ./node_modules/typescript/bin/tsc",
     "start": "node dist/index.js",
     "worker": "node dist/workers/worker-runner.js",
     "dev": "node ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
