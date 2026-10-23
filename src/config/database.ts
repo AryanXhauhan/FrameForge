@@ -13,12 +13,17 @@ export const prisma = new PrismaClient({
   log: config.nodeEnv === 'development' ? ['warn', 'error'] : ['error'],
 });
 
-export const redisConnection = new Redis({
-  host: config.redis.host,
-  port: config.redis.port,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-});
+export const redisConnection = config.redis.url
+  ? new Redis(config.redis.url, {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    })
+  : new Redis({
+      host: config.redis.host,
+      port: config.redis.port,
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    });
 
 redisConnection.on('error', (err) => {
   console.error('[Redis Connection Error]', err.message);
