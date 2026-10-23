@@ -1,0 +1,235 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum MediaAssetStatus {
+  UPLOADING
+  READY
+  FAILED
+}
+
+enum MediaVariantType {
+  PROXIED_360P
+  PROXIED_720P
+  NORMALIZED_1080P
+  THUMBNAIL
+  AUDIO_EXTRACT
+}
+
+enum JobType {
+  PROXY_GENERATION
+  TRANSCODE
+  AI_ANALYSIS
+  EXPORT
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  RETRYING
+  COMPLETED
+  FAILED
+  CANCELLING
+  CANCELLED
+}
+
+enum CreditTransactionType {
+  GRANT
+  RESERVE
+  CONSUME
+  RELEASE
+  REFUND
+}
+
+enum CreditTransactionStatus {
+  PENDING
+  SETTLED
+  RELEASED
+  FAILED
+}
+
+model User {
+  id           String             @id @default(uuid())
+  email        String             @unique
+  name         String
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  projects     Project[]
+  jobs         ProcessingJob[]
+  creditAccount CreditAccount?
+  creditTransactions CreditTransaction[]
+  usageRecords UsageRecord[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String         @id @default(uuid())
+  userId      String
+  name        String
+  status      ProjectStatus  @default(ACTIVE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mediaAssets MediaAsset[]
+  jobs        ProcessingJob[]
+
+  @@index([userId])
+  @@map("projects")
+}
+
+model MediaAsset {
+  id               String           @id @default(uuid())
+  projectId        String
+  originalFilename String
+  storageKey       String
+  mimeType         String
+  sizeBytes        BigInt
+  durationSeconds  Float?
+  width            Int?
+  height           Int?
+  codec            String?
+  bitrate          Int?
+  status           MediaAssetStatus @default(UPLOADING)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variants         MediaVariant[]
+  jobs             ProcessingJob[]
+
+  @@index([projectId])
+  @@map("media_assets")
+}
+
+model MediaVariant {
+  id           String           @id @default(uuid())
+  mediaAssetId String
+  type         MediaVariantType
+  storageKey   String
+  width        Int?
+  height       Int?
+  codec        String?
+  bitrate      Int?
+  sizeBytes    BigInt?
+  status       String           @default("READY")
+  createdAt    DateTime         @default(now())
+
+  mediaAsset   MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@index([mediaAssetId])
+  @@map("media_variants")
+}
+
+model ProcessingJob {
+  id             String          @id @default(uuid())
+  userId         String
+  projectId      String
+  mediaAssetId   String?
+  type           JobType
+  status         JobStatus       @default(QUEUED)
+  priority       Int             @default(5)
+  progress       Int             @default(0)
+  currentStage   String          @default("QUEUED")
+  attempts       Int             @default(0)
+  maxAttempts    Int             @default(3)
+  idempotencyKey String?         @unique
+  errorCode      String?
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mediaAsset     MediaAsset?     @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  events         JobEvent[]
+  usageRecord    UsageRecord?
+  creditTransactions CreditTransaction[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([status])
+  @@index([type])
+  @@map("processing_jobs")
+}
+
+model JobEvent {
+  id        String        @id @default(uuid())
+  jobId     String
+  eventType String
+  progress  Int           @default(0)
+  metadata  Json?
+  createdAt DateTime      @default(now())
+
+  job       ProcessingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_events")
+}
+
+model CreditAccount {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  balance         Int      @default(100)
+  reservedCredits Int      @default(0)
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("credit_accounts")
+}
+
+model CreditTransaction {
+  id             String                  @id @default(uuid())
+  userId         String
+  jobId          String?
+  type           CreditTransactionType
+  amount         Int
+  status         CreditTransactionStatus @default(PENDING)
+  idempotencyKey String?                 @unique
+  createdAt      DateTime                @default(now())
+
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job            ProcessingJob?          @relation(fields: [jobId], references: [id])
+
+  @@index([userId])
+  @@index([jobId])
+  @@map("credit_transactions")
+}
+
+model UsageRecord {
+  id                String        @id @default(uuid())
+  userId            String
+  jobId             String        @unique
+  cpuSeconds        Float         @default(0)
+  gpuSeconds        Float         @default(0)
+  storageBytes      BigInt        @default(0)
+  processingSeconds Float         @default(0)
+  aiInputTokens     Int           @default(0)
+  aiOutputTokens    Int           @default(0)
+  estimatedCost     Float         @default(0)
+  createdAt         DateTime      @default(now())
+
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job               ProcessingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("usage_records")
+}

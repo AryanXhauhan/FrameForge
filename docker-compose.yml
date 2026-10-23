@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: frameforge_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: frameforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: frameforge_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    container_name: frameforge_api
+    restart: always
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/frameforge?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      UPLOAD_DIR: /app/storage/uploads
+      OUTPUT_DIR: /app/storage/outputs
+      JWT_SECRET: super-secret-frameforge-jwt-key-32chars
+    ports:
+      - "4000:4000"
+    volumes:
+      - media_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    container_name: frameforge_worker
+    restart: always
+    command: ["node", "dist/workers/worker-runner.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/frameforge?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      UPLOAD_DIR: /app/storage/uploads
+      OUTPUT_DIR: /app/storage/outputs
+    volumes:
+      - media_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_storage:
